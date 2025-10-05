@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, request, jsonify, render_template
 import requests
 import os
 from dotenv import load_dotenv
@@ -7,49 +7,59 @@ from flask_cors import CORS
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app)  # autorise le frontend à se connecter depuis une autre origine (utile pour Render)
+CORS(app)
 
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 MISTRAL_MODEL = "mistral-small-latest"
 MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions"
 
-
+# --- Page d'accueil ---
 @app.route("/")
 def home():
     return render_template("index.html")
 
-
+# --- Chat texte ---
 @app.route("/chat", methods=["POST"])
 def chat():
-    try:
-        user_input = request.json.get("message")
+    data = request.json
+    message = data.get("message", "")
+    if not message:
+        return jsonify({"error": "Aucun message reçu"}), 400
 
-        if not user_input:
-            return jsonify({"error": "Aucun message reçu"}), 400
+    headers = {
+        "Authorization": f"Bearer {MISTRAL_API_KEY}",
+        "Content-Type": "application/json",
+    }
 
-        headers = {
-            "Authorization": f"Bearer {MISTRAL_API_KEY}",
-            "Content-Type": "application/json",
-        }
+    payload = {
+        "model": MISTRAL_MODEL,
+        "messages": [{"role": "user", "content": message}],
+    }
 
-        payload = {
-            "model": MISTRAL_MODEL,
-            "messages": [{"role": "user", "content": user_input}],
-        }
+    response = requests.post(MISTRAL_URL, headers=headers, json=payload)
+    if response.status_code != 200:
+        return jsonify({"error": response.text}), response.status_code
 
-        response = requests.post(MISTRAL_URL, headers=headers, json=payload)
+    reply = response.json()["choices"][0]["message"]["content"]
+    return jsonify({"response": reply})
 
-        if response.status_code != 200:
-            return jsonify({"error": response.text}), response.status_code
+# --- Audio upload / transcription ---
+@app.route("/transcribe", methods=["POST"])
+def transcribe_audio():
+    """
+    Attend un fichier audio (wav/webm) et le transcrit avec Whisper
+    """
+    if "audio" not in request.files:
+        return jsonify({"error": "Aucun fichier audio"}), 400
 
-        data = response.json()
-        reply = data["choices"][0]["message"]["content"]
+    audio_file = request.files["audio"]
 
-        return jsonify({"response": reply})
+    # Ici tu peux appeler Whisper API
+    # Exemple fictif pour démonstration
+    # Dans la vraie version, tu feras requests.post vers Whisper/Mistral Audio
+    transcript = "Texte transcrit de l'audio"  # TODO : remplacer par vrai call API
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
+    return jsonify({"transcript": transcript})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
