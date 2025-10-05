@@ -9,9 +9,11 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
+# 🔑 Clés API Mistral
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
-MISTRAL_MODEL = "mistral-small-latest"
-MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions"
+CHAT_MODEL = "mistral-small-latest"
+TRANSCRIBE_MODEL = "mistral-audio-latest"  # modèle audio → texte
+BASE_URL = "https://api.mistral.ai/v1"
 
 # --- Page d'accueil ---
 @app.route("/")
@@ -32,34 +34,42 @@ def chat():
     }
 
     payload = {
-        "model": MISTRAL_MODEL,
+        "model": CHAT_MODEL,
         "messages": [{"role": "user", "content": message}],
     }
 
-    response = requests.post(MISTRAL_URL, headers=headers, json=payload)
+    response = requests.post(f"{BASE_URL}/chat/completions", headers=headers, json=payload)
     if response.status_code != 200:
         return jsonify({"error": response.text}), response.status_code
 
     reply = response.json()["choices"][0]["message"]["content"]
     return jsonify({"response": reply})
 
-# --- Audio upload / transcription ---
+# --- Transcription audio ---
 @app.route("/transcribe", methods=["POST"])
 def transcribe_audio():
-    """
-    Attend un fichier audio (wav/webm) et le transcrit avec Whisper
-    """
     if "audio" not in request.files:
         return jsonify({"error": "Aucun fichier audio"}), 400
 
     audio_file = request.files["audio"]
 
-    # Ici tu peux appeler Whisper API
-    # Exemple fictif pour démonstration
-    # Dans la vraie version, tu feras requests.post vers Whisper/Mistral Audio
-    transcript = "Texte transcrit de l'audio"  # TODO : remplacer par vrai call API
+    files = {"file": (audio_file.filename, audio_file.stream, audio_file.mimetype)}
+    headers = {"Authorization": f"Bearer {MISTRAL_API_KEY}"}
 
-    return jsonify({"transcript": transcript})
+    try:
+        response = requests.post(
+            f"{BASE_URL}/audio/transcriptions",
+            headers=headers,
+            files=files,
+            data={"model": TRANSCRIBE_MODEL}
+        )
+        if response.status_code != 200:
+            return jsonify({"error": response.text}), response.status_code
+
+        transcript = response.json().get("text", "")
+        return jsonify({"transcript": transcript})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
